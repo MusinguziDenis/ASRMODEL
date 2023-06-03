@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence, pad_packed_sequence
 import torch.nn.functional as F
+import torchaudio
 
 class PermuteBlock(nn.Module):
     def forward(self, x):
@@ -20,7 +21,7 @@ class pBLSTM(torch.nn.Module):
         x, x_lens = pad_packed_sequence(x_packed, batch_first=True)
         
         x, x_lens = self.trunc_reshape(x, x_lens)
-        packed_in = pack_padded_sequence(x, x_lens, batch_first=True, enforce_sorted=False)
+        packed_in = pack_padded_sequence(x, x_lens, batch_first=True, enforce_sorted = False)
         packed_out, packed_length = self.blstm(packed_in)
 
         return packed_out
@@ -95,6 +96,7 @@ class Encoder(nn.Module):
             nn.BatchNorm1d(self.output_channels),
             nn.GELU()
         )
+        self.lstm                   = nn.LSTM(input_channels, encoder_hidden_size, batch_first =True, num_layers=2, dropout= 0.2, bidirectional=True)
         
         self.pBLSTMS    	        = torch.nn.Sequential(
                                         pBLSTM(encoder_hidden_size*4, encoder_hidden_size),
@@ -103,11 +105,9 @@ class Encoder(nn.Module):
         )
         
     def forward(self, x, xlen):
-        x_cnn                           = self.permutate(x)
-        y_cnn                           = self.embedding(x_cnn)
-        x_lstm                          = self.permutate(y_cnn)
-        packed_input                    = pack_padded_sequence(x_lstm, xlen, enforce_sorted=False, batch_first=True)
-        pblstm_output, _                = self.pBLSTMS(packed_input)
+        packed_input                    = pack_padded_sequence(x, xlen, enforce_sorted=False, batch_first=True)
+        x_lstm,_                          = self.lstm(packed_input)
+        pblstm_output                   = self.pBLSTMS(x_lstm)
         encoder_outputs, encoder_lens   = pad_packed_sequence(pblstm_output, batch_first=True)
         
         return encoder_outputs, encoder_lens
@@ -118,34 +118,39 @@ class Decoder(nn.Module):
         super(Decoder, self).__init__()
         
         self.mlp            = nn.Sequential(
-            PermuteBlock(), nn.BatchNorm1d(embed_size), PermuteBlock(),
+            #PermuteBlock(), nn.BatchNorm1d(embed_size), PermuteBlock(),
             nn.Linear(embed_size, embed_size *4),
-            nn.BatchNorm1d(embed_size *4),
+            # nn.BatchNorm1d(embed_size *4),
+            PermuteBlock(), nn.BatchNorm1d(embed_size *4), PermuteBlock(),
             nn.Dropout(p = 0.2),
             torch.nn.Tanh(),
             nn.Linear(embed_size* 4, output_size)
-        ),
+        )
         
         self.softmax         = nn.LogSoftmax(dim=2)
         
     def forward(self, encoder_out):
-        out = self.softmax(self.mlp(encoder_out))
+        x   = self.mlp(encoder_out)
+        out = self.softmax(x)
         
         return out
     
     
 class ASRMODEL(nn.Module):
-    def __init__(self, input_size,input_channels, kernel_size,  output_channels,  embed_size= 192, output_size= 41, training=True) -> None:
+    def __init__(self,input_channels, kernel_size,  output_channels,  embed_size= 192, output_size= 41, training=True) -> None:
         super(ASRMODEL, self).__init__()
         
         self.training                   = training
         
         self.augmentations              = nn.Sequential(
-            
+            PermuteBlock(),
+            torchaudio.transforms.TimeMasking(200),
+            torchaudio.transforms.FrequencyMasking(5),
+            PermuteBlock(),
         )
         
         self.encoder                    = Encoder(input_channels, output_channels, kernel_size, padding=1, stride=1, encoder_hidden_size=embed_size)
-        self.decoder                    = Decoder(embed_size,output_size)
+        self.decoder                    = Decoder(embed_size*2,output_size)
         
     def forward(self,x, lengths_x):
         if self.training:

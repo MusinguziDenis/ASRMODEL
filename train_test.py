@@ -26,11 +26,11 @@ def decode_prediction(output, output_lens, decoder, PHONEME_MAP):
         pred_strings.append(curr_decode)
     return pred_strings
 
-def calculate_levenshtein(output, label, output_lens, label_lens, decoder, PHONEME_MAP, decoders): # y - sequence of integers
+def calculate_levenshtein(output, label, output_lens, label_lens, decoder, PHONEME_MAP): # y - sequence of integers
     
     dist            = 0
     batch_size      = label.shape[0]
-    pred_strings    = decode_prediction(output, output_lens, decoders, PHONEME_MAP)
+    pred_strings    = decode_prediction(output, output_lens, decoder, PHONEME_MAP)
     
     for i in range(batch_size):
         pred_string = [phoneme for phoneme in pred_strings[i]]
@@ -40,9 +40,10 @@ def calculate_levenshtein(output, label, output_lens, label_lens, decoder, PHONE
     dist /= batch_size
     return dist
 
-def train_model(model, train_loader, criterion,scaler, optimizer):
+def train_model(model, train_loader, criterion,scaler, optimizer, decoder, phoneme_map):
     
     model.train()
+    vdist= 0
     batch_bar = tqdm(total=len(train_loader), dynamic_ncols=True, leave=False, position=0, desc='Train') 
     total_loss = 0
 
@@ -53,11 +54,14 @@ def train_model(model, train_loader, criterion,scaler, optimizer):
 
         with torch.cuda.amp.autocast():     
             h, lh = model(x, lx)
+            h     = torch.permute(h, (1,0,2))
             loss = criterion(h, y, lh, ly)
 
         total_loss += loss.item()
+        vdist += calculate_levenshtein(torch.permute(h, (0, 1, 2)), y, lh, ly, decoder, phoneme_map)
 
         batch_bar.set_postfix(
+            lev_dist = "{:0.04f}".format(float(vdist / (i + 1))),  
             loss="{:.04f}".format(float(total_loss / (i + 1))),
             lr="{:.06f}".format(float(optimizer.param_groups[0]['lr'])))
 
@@ -73,7 +77,7 @@ def train_model(model, train_loader, criterion,scaler, optimizer):
 
     batch_bar.close() # You need this to close the tqdm bar
     
-    return total_loss / len(train_loader)
+    return total_loss / len(train_loader), vdist/len(train_loader)
 
 
 def validate_model(model, val_loader, decoder, phoneme_map, criterion):
@@ -91,7 +95,7 @@ def validate_model(model, val_loader, decoder, phoneme_map, criterion):
 
         with torch.inference_mode():
             h, lh = model(x, lx)
-            # h = torch.permute(h, (1, 0, 2))
+            h = torch.permute(h, (1, 0, 2))
             loss = criterion(h, y, lh, ly)
 
         total_loss += float(loss)
