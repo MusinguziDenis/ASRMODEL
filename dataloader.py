@@ -2,7 +2,7 @@ import torch
 import numpy as np
 import os
 from torch.utils.data import Dataset, DataLoader
-from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence, pad_packed_sequence
+from torch.nn.utils.rnn import pad_sequence
 
 
 CMUdict_ARPAbet = {
@@ -25,38 +25,50 @@ ARPAbet = list(CMUdict_ARPAbet.values())
 PHONEMES = CMUdict[:-2]
 LABELS = ARPAbet[:-2]
 
-root ='/home/ubuntu'
+root ='/home/ubuntu'# Root folder with the dataset
 
 
 class AudioDataset(torch.utils.data.Dataset):
-
-    def __init__(self, PHONEMES, context =0, partition ='train-clean-100'): 
-        '''
-        '''
-        self.mfcc_dir = os.path.join(root,partition, 'mfcc')
-        self.transcript_dir = os.path.join(root, partition, 'transcript')
-        self.mfcc_files = sorted(os.listdir(self.mfcc_dir))
-        self.transcript_files = sorted(os.listdir(self.transcript_dir))
-        self.PHONEMES = PHONEMES        
+    """Implements a custom dataloader class for the training and validation data.
+    Parameters
+    ----------
+    PHONEMES : list
+        List of phonemes
+    partition : str
+        Dataset partition to load
+    """
+    def __init__(self, PHONEMES, partition ='train-clean-100'): 
+        self.mfcc_dir = os.path.join(root,partition, 'mfcc') # Create a path for loading the mfcc files
+        self.transcript_dir = os.path.join(root, partition, 'transcript') # Create a path for loading the transcript files
+        self.mfcc_files = sorted(os.listdir(self.mfcc_dir)) # Get the list of sorted mfcc files
+        self.transcript_files = sorted(os.listdir(self.transcript_dir))# Get the list of sorted transcript files
+        self.PHONEMES = PHONEMES       
         # Making sure that we have the same no. of mfcc and transcripts
         assert len(self.mfcc_files) == len(self.transcript_files)      
-        self.length = len(self.mfcc_files)
-        self.mfccs = list()
-        self.transcripts = list()
-
+        self.length = len(self.mfcc_files) # Set the length of the dataset
+        self.mfccs = list() # Create a list of loaded mfccs
+        self.transcripts = list() # Create a list of loaded transcripts
+        # Loop through the files and load the mfccs and transcripts
         for i in range(self.length):
-            mfcc = np.load(os.path.join(self.mfcc_dir, self.mfcc_files[i]))
-            mfcc = (mfcc - np.mean(mfcc, axis =0))/np.std(mfcc, axis =0)
-            transcript = np.load(os.path.join(self.transcript_dir, self.transcript_files[i]))
-            y = np.array([PHONEMES.index(i) for i in transcript[1:-1]])
-            self.mfccs.append(mfcc)
-            self.transcripts.append(y)
+            mfcc = np.load(os.path.join(self.mfcc_dir, self.mfcc_files[i])) # Load the mfcc file
+            mfcc = (mfcc - np.mean(mfcc, axis =0))/np.std(mfcc, axis =0) # Normalize the mfcc coefficients
+            transcript = np.load(os.path.join(self.transcript_dir, self.transcript_files[i])) # Load the transcript file
+            y = np.array([PHONEMES.index(i) for i in transcript[1:-1]]) # Convert the transcript to a list of phonemes
+            self.mfccs.append(mfcc) # Append the mfcc to the list of mfccs
+            self.transcripts.append(y) # Append the transcript to the list of transcripts
 
     def __len__(self):
+        """Length of the dataset"""
         return self.length
     
     def __getitem__(self, ind):
         '''
+        Load a single example from the dataset
+        args:
+            ind: index of the example to be loaded
+        returns:
+            mfcc: mfcc coefficients
+            transcript: transcript
         '''
         mfcc =  torch.FloatTensor(self.mfccs[ind])
         transcript = torch.FloatTensor(self.transcripts[ind])
@@ -83,29 +95,37 @@ class AudioDataset(torch.utils.data.Dataset):
 
 
 class AudioDatasetTest(torch.utils.data.Dataset):
-
-    def __init__(self, PHONEMES, context =0, partition ='test-clean'): 
-        '''
-        Initializes the dataset.
-
-        INPUTS: What inputs do you need here?
-        '''
-        self.mfcc_dir = os.path.join(root, partition, 'mfcc') 
-        self.mfcc_files = sorted(os.listdir(self.mfcc_dir))
-        self.PHONEMES = PHONEMES        
-        self.length = len(self.mfcc_files)
-        self.mfccs = list()
-  
+    """Implements a custom dataloader class for the test data.
+    Parameters
+    ----------
+    PHONEMES : list
+        List of phonemes
+    partition : str
+        Dataset partition to load
+    """
+    def __init__(self, PHONEMES, partition ='test-clean'): 
+        self.mfcc_dir = os.path.join(root, partition, 'mfcc') # Create pats for loading the mfcc files
+        self.mfcc_files = sorted(os.listdir(self.mfcc_dir)) # Get the list of sorted mfcc files
+        self.PHONEMES = PHONEMES # Get the list of phonemes
+        self.length = len(self.mfcc_files) # Set the length of the dataset
+        self.mfccs = list() # Create a list of loaded mfccs
+        # Loop through the files and load the mfccs
         for i in range(self.length):
-            mfcc = np.load(os.path.join(self.mfcc_dir, self.mfcc_files[i]))
-            mfcc = (mfcc - np.mean(mfcc, axis =0))/np.std(mfcc, axis =0)
-            self.mfccs.append(mfcc)
+            mfcc = np.load(os.path.join(self.mfcc_dir, self.mfcc_files[i])) # Load the mfcc file
+            mfcc = (mfcc - np.mean(mfcc, axis =0))/np.std(mfcc, axis =0) # Normalize the mfcc coefficients
+            self.mfccs.append(mfcc) # Append the mfcc to the list of mfccs
     
     def __len__(self):
+        """"Returns the length of the dataset"""
         return self.length
 
     def __getitem__(self, ind):
         '''
+        Load a single example from the dataset
+        args:
+            ind: index of the example to be loaded
+        returns:
+            mfcc: mfcc coefficients
         '''
         mfcc =  torch.FloatTensor(self.mfccs[ind])
         return mfcc
