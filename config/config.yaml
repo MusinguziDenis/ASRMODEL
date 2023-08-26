@@ -1,0 +1,9 @@
+batch_size : 128
+epochs : 100
+learning_rate : 0.001
+optimizer : AdamW
+beam_width : 3
+test_beam_width : 10
+scheduler : ReduceLROnPlateau
+checkpoint_path : /home/ubuntu/ASRMODEL/checkpoint.pth
+best_model_path : /home/ubuntu/ASRMODEL/best_model.pth
